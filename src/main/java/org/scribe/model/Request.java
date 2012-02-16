@@ -5,6 +5,8 @@ import java.net.*;
 import java.nio.charset.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
+import org.apache.commons.codec.binary.Base64;
 
 import org.scribe.exceptions.*;
 
@@ -18,6 +20,10 @@ class Request
   private static final String CONTENT_LENGTH = "Content-Length";
   private static final String CONTENT_TYPE = "Content-Type";
   public static final String DEFAULT_CONTENT_TYPE = "application/x-www-form-urlencoded";
+  private static final String MULTIPART_BOUNDARY = "----MULTIPART_BOUNDARY_1_0";
+  public static final String MULTIPART_CONTENT_TYPE = "multipart/form-data; boundary=" + MULTIPART_BOUNDARY;
+  private static final String CRLF = "\r\n";
+  private static final String CONTENT_DISP = "Content-Disposition: form-data";
 
   private String url;
   private Verb verb;
@@ -32,6 +38,9 @@ class Request
   private Long connectTimeout = null;
   private Long readTimeout = null;
 
+  private boolean isMultipart = false;
+  private LinkedList<MultipartBody> multipartBody;
+
   /**
    * Creates a new Http Request
    * 
@@ -45,6 +54,7 @@ class Request
     this.querystringParams = new ParameterList();
     this.bodyParams = new ParameterList();
     this.headers = new HashMap<String, String>();
+    this.multipartBody = new LinkedList<MultipartBody>();
   }
 
   /**
@@ -150,6 +160,31 @@ class Request
   {
     this.bodyParams.add(key, value);
   }
+  
+  /**
+   * Add large data blobs that will become a part of a multi-part
+   * http request (normally used for file uploads).
+   *
+   * @param type a MIME type describing the encoded data
+   * @param encode base64 encode the data
+   * @param data the blob
+   */
+   public void addMultipartBody(String type, String name, String filename, boolean encode, byte[] data) {
+     MultipartBody mb;
+
+	 if (encode) {
+       // base64 encode the data stream and then store it
+       mb = new MultipartBody(type, name, filename, true, Base64.encodeBase64URLSafe(data));
+     } else {
+       mb = new MultipartBody(type, name, filename, false, data);
+     }
+     multipartBody.add(mb);
+     
+     if (!isMultipart) {
+       isMultipart = true;
+       addHeader(CONTENT_TYPE, MULTIPART_CONTENT_TYPE);
+     }
+   }
 
   /**
    * Add a QueryString parameter
@@ -257,18 +292,88 @@ class Request
     }
   }
 
+  byte[] byteArrayConcat(byte[] a1, byte[] a2)
+  {
+	byte[] results = new byte[a1.length + a2.length];
+
+	for (int i = 0; i < a1.length; i++) {
+	  results[i] = a1[i];
+	}
+
+	for (int i = 0; i < a2.length; i++) {
+		results[a1.length + i] = a2[i];
+	}
+
+	return results;
+  }
+
   byte[] getByteBodyContents()
   {
+	Logger log = Logger.getLogger("getbyteBodyContents");
     if (bytePayload != null) return bytePayload;
-    String body = (payload != null) ? payload : bodyParams.asFormUrlEncodedString();
-    try
-    {
+    String body = "";
+	byte[] results, tmp;
+
+	if (isMultipart) {
+	  /* Given the multipart nature, we'll need to split off each parameter */
+	  String params = (payload != null) ? payload : bodyParams.asFormUrlEncodedString();
+	  
+	  body += "--" + MULTIPART_BOUNDARY;
+
+	  if (params.length() > 0) {
+		body += CRLF + CONTENT_TYPE + ": application/x-url-encoded" + CRLF + CRLF;
+		body += (payload != null) ? payload : bodyParams.asFormUrlEncodedString();
+		body += CRLF + "--" + MULTIPART_BOUNDARY;
+	  }
+
+	  results = body.getBytes();
+	  String footer = CRLF + "--" + MULTIPART_BOUNDARY;
+	  Iterator<MultipartBody> i = multipartBody.iterator();
+      while (i.hasNext()) {
+        MultipartBody m = i.next();
+        body = CRLF + CONTENT_TYPE + ": " + m.getHeader();
+
+		if (m.getName() != null) {
+			body += CRLF + CONTENT_DISP + "; name=\"" + m.getName() + "\"";
+		}
+
+		if (m.getFilename() != null) {
+			body += "; filename=\"" + m.getFilename() + "\"";
+		}
+
+        if (m.isEncoded()) {
+          body += CRLF + "Content-Transfer-Encoding: base64";
+        }
+
+        body += CRLF + CRLF;
+
+		tmp = byteArrayConcat(results, body.getBytes());
+		results = tmp;
+		tmp = byteArrayConcat(results, m.getContents());
+		results = tmp;
+		tmp = byteArrayConcat(results, footer.getBytes());
+		results = tmp;
+      }
+	  tmp = byteArrayConcat(results, new String("--" + CRLF).getBytes());
+	  results = tmp;
+    } else {
+		body = (payload != null) ? payload : bodyParams.asFormUrlEncodedString();
+		results = body.getBytes();
+	}
+
+	//log.info("body output:\n" + body);
+/*
+	try
+	{
+*/
+	return results;
+/*
       return body.getBytes(getCharset());
-    }
-    catch(UnsupportedEncodingException uee)
+    } catch(UnsupportedEncodingException uee)
     {
       throw new OAuthException("Unsupported Charset: "+getCharset(), uee);
     }
+ */
   }
 
   /**
