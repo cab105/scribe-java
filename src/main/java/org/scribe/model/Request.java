@@ -15,10 +15,13 @@ import org.scribe.exceptions.*;
  * 
  * @author Pablo Fernandez
  */
-class Request
+public class Request
 {
   private static final String CONTENT_LENGTH = "Content-Length";
   private static final String CONTENT_TYPE = "Content-Type";
+  private static RequestTuner NOOP = new RequestTuner() {
+    @Override public void tune(Request _){}
+  };
   public static final String DEFAULT_CONTENT_TYPE = "application/x-www-form-urlencoded";
   private static final String MULTIPART_BOUNDARY = "----MULTIPART_BOUNDARY_1_0";
   public static final String MULTIPART_CONTENT_TYPE = "multipart/form-data; boundary=" + MULTIPART_BOUNDARY;
@@ -35,6 +38,7 @@ class Request
   private String charset;
   private byte[] bytePayload = null;
   private boolean connectionKeepAlive = false;
+  private boolean followRedirects = true;
   private Long connectTimeout = null;
   private Long readTimeout = null;
 
@@ -64,21 +68,22 @@ class Request
    * @throws RuntimeException
    *           if the connection cannot be created.
    */
-  public Response send()
+  public Response send(RequestTuner tuner)
   {
     try
     {
       createConnection();
-      return doSend();
+      return doSend(tuner);
     }
-    catch (UnknownHostException uhe)
+    catch (Exception e)
     {
-      throw new OAuthException("Could not reach the desired host. Check your network connection.", uhe);
+      throw new OAuthConnectionException(e);
     }
-    catch (IOException ioe)
-    {
-      throw new OAuthException("Problems while creating connection.", ioe);
-    }
+  }
+
+  public Response send()
+  {
+    return send(NOOP);
   }
 
   private void createConnection() throws IOException
@@ -88,6 +93,7 @@ class Request
     {
       System.setProperty("http.keepAlive", connectionKeepAlive ? "true" : "false");
       connection = (HttpURLConnection) new URL(completeUrl).openConnection();
+      connection.setInstanceFollowRedirects(followRedirects);
     }
   }
 
@@ -101,7 +107,7 @@ class Request
     return querystringParams.appendTo(url);
   }
 
-  Response doSend() throws IOException
+  Response doSend(RequestTuner tuner) throws IOException
   {
     connection.setRequestMethod(this.verb.name());
     if (connectTimeout != null) 
@@ -117,6 +123,7 @@ class Request
     {
       addBody(connection, getByteBodyContents());
     }
+    tuner.tune(this);
     return new Response(connection);
   }
 
@@ -219,7 +226,7 @@ class Request
    */
   public void addPayload(byte[] payload)
   {
-    this.bytePayload = payload;
+    this.bytePayload = payload.clone();
   }
 
   /**
@@ -449,6 +456,19 @@ class Request
   public void setConnectionKeepAlive(boolean connectionKeepAlive)
   {
     this.connectionKeepAlive = connectionKeepAlive;
+  }
+
+  /**
+   * Sets whether the underlying Http Connection follows redirects or not.
+   *
+   * Defaults to true (follow redirects)
+   *
+   * @see http://docs.oracle.com/javase/6/docs/api/java/net/HttpURLConnection.html#setInstanceFollowRedirects(boolean)
+   * @param followRedirects
+   */
+  public void setFollowRedirects(boolean followRedirects)
+  {
+    this.followRedirects = followRedirects;
   }
 
   /*
