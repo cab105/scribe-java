@@ -57,10 +57,10 @@ public class OAuth10aServiceImpl implements OAuthService
 
     config.log("sending request...");
     Response response = request.send(tuner);
-    String body = response.getBody();
 
     config.log("response status code: " + response.getCode());
-    config.log("response body: " + body);
+    config.log("response body: " + response.getBody());
+    String body = response.getBody();
     return api.getRequestTokenExtractor().extract(body);
   }
 
