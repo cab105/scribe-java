@@ -9,7 +9,7 @@ import org.scribe.oauth.*;
 
 public class TwitterExample
 {
-  private static final String PROTECTED_RESOURCE_URL = "http://api.twitter.com/1.1/account/verify_credentials.json";
+  private static final String PROTECTED_RESOURCE_URL = "https://api.twitter.com/1.1/account/verify_credentials.json";
   
   public static void main(String[] args)
   {
@@ -41,7 +41,7 @@ public class TwitterExample
     System.out.println("Trading the Request Token for an Access Token...");
     Token accessToken = service.getAccessToken(requestToken, verifier);
     System.out.println("Got the Access Token!");
-    System.out.println("(if your curious it looks like this: " + accessToken + " )");
+    System.out.println("(if you're curious, it looks like this: " + accessToken + " )");
     System.out.println();
 
     // Now let's go and ask for a protected resource!
@@ -54,7 +54,7 @@ public class TwitterExample
     System.out.println(response.getBody());
 
     System.out.println();
-    System.out.println("Thats it man! Go and build something awesome with Scribe! :)");
+    System.out.println("That's it man! Go and build something awesome with Scribe! :)");
   }
 
 }
